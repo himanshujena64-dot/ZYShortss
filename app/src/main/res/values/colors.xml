@@ -1,0 +1,6 @@
+<resources>
+    <color name="bg_deep">#0B1F0E</color>
+    <color name="accent">#7ED321</color>
+    <color name="accent_dark">#4A8C2F</color>
+    <color name="text_light">#F1F6F0</color>
+</resources>
