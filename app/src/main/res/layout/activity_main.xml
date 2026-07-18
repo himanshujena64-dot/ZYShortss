@@ -1,56 +1,143 @@
-<?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="#0B1F0E">
+package com.zyshorts.app
 
-    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-        android:id="@+id/swipe_refresh"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent">
+import android.annotation.SuppressLint
+import android.net.Uri
+import android.net.http.SslError
+import android.os.Bundle
+import android.view.View
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 
-        <WebView
-            android:id="@+id/webview"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+class MainActivity : AppCompatActivity() {
 
-    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+    // The live Hugging Face Space that powers ZYShorts.
+    // Changing your Space or moving hosts later? Just update this one line
+    // and rebuild — no other code changes needed.
+    private val appUrl = "https://himanshujena564-newtrail.hf.space"
 
-    <LinearLayout
-        android:id="@+id/error_view"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:visibility="gone"
-        android:background="#0B1F0E"
-        android:padding="32dp">
+    private lateinit var webView: WebView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
+    private lateinit var errorView: View
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="⚠️ Couldn't reach ZYShorts"
-            android:textColor="#F1F6F0"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+    @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Check your internet connection and try again."
-            android:textColor="#B8CBB4"
-            android:textSize="14sp" />
+        webView = findViewById(R.id.webview)
+        swipeRefresh = findViewById(R.id.swipe_refresh)
+        errorView = findViewById(R.id.error_view)
+        val retryButton = findViewById<View>(R.id.retry_button)
 
-        <Button
-            android:id="@+id/retry_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="Retry"
-            android:backgroundTint="#7ED321"
-            android:textColor="#06170A" />
+        // Smooth scrolling / rendering fixes
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        webView.overScrollMode = View.OVER_SCROLL_NEVER
+        webView.setOnTouchListener { view, _ ->
+            // Stop any parent (e.g. SwipeRefreshLayout) from intercepting
+            // touch events mid-gesture, so both upward and downward swipes
+            // reach the WebView's own scroll handling uninterrupted.
+            view.parent.requestDisallowInterceptTouchEvent(true)
+            false
+        }
 
-    </LinearLayout>
+        // Pull-to-refresh conflicts with vertical swipe gestures in the
+        // video feed (an accidental drag was reloading the page and
+        // dropping users back to the login screen), so it's disabled here.
+        // The layout is left in place; only the gesture is turned off.
+        swipeRefresh.isEnabled = false
 
-</FrameLayout>
+        val settings: WebSettings = webView.settings
+        settings.javaScriptEnabled = true
+        settings.domStorageEnabled = true
+        settings.databaseEnabled = true
+        settings.loadWithOverviewMode = true
+        settings.useWideViewPort = true
+        settings.mediaPlaybackRequiresUserGesture = false
+        settings.cacheMode = WebSettings.LOAD_DEFAULT
+        settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        settings.offscreenPreRaster = true
+
+        webView.webViewClient = object : WebViewClient() {
+
+            override fun shouldOverrideUrlLoading(
+                view: WebView,
+                request: WebResourceRequest
+            ): Boolean {
+                // Keep everything inside the app if it's our own Space or a
+                // Hugging Face subdomain (some Spaces load assets there).
+                val host = request.url.host ?: ""
+                return if (host.contains("hf.space") || host.contains("huggingface.co")) {
+                    false // let WebView handle it
+                } else {
+                    // External link (e.g. a "download" link to another site) -
+                    // open in the system browser instead of hijacking our app.
+                    try {
+                        startActivity(
+                            android.content.Intent(android.content.Intent.ACTION_VIEW, request.url)
+                        )
+                    } catch (e: Exception) {
+                        // no browser available, ignore
+                    }
+                    true
+                }
+            }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                super.onPageFinished(view, url)
+                swipeRefresh.isRefreshing = false
+                errorView.visibility = View.GONE
+                webView.visibility = View.VISIBLE
+            }
+
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceError
+            ) {
+                super.onReceivedError(view, request, error)
+                if (request.isForMainFrame) {
+                    swipeRefresh.isRefreshing = false
+                    webView.visibility = View.GONE
+                    errorView.visibility = View.VISIBLE
+                }
+            }
+
+            override fun onReceivedSslError(
+                view: WebView,
+                handler: SslErrorHandler,
+                error: SslError
+            ) {
+                // Do not silently accept broken certs; fail safe.
+                handler.cancel()
+                Toast.makeText(
+                    this@MainActivity,
+                    "Secure connection could not be verified.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+        retryButton.setOnClickListener {
+            errorView.visibility = View.GONE
+            webView.visibility = View.VISIBLE
+            webView.loadUrl(appUrl)
+        }
+
+        webView.loadUrl(appUrl)
+    }
+
+    override fun onBackPressed() {
+        if (webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            super.onBackPressed()
+        }
+    }
+}
