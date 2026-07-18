@@ -1,7 +1,6 @@
 package com.zyshorts.app
 
 import android.annotation.SuppressLint
-import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
 import android.view.View
@@ -13,7 +12,6 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 
 class MainActivity : AppCompatActivity() {
 
@@ -23,7 +21,6 @@ class MainActivity : AppCompatActivity() {
     private val appUrl = "https://himanshujena564-newtrail.hf.space"
 
     private lateinit var webView: WebView
-    private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var errorView: View
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -32,9 +29,14 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webview)
-        swipeRefresh = findViewById(R.id.swipe_refresh)
         errorView = findViewById(R.id.error_view)
         val retryButton = findViewById<View>(R.id.retry_button)
+
+        // No SwipeRefreshLayout, no custom touch listener — the WebView is
+        // the only touch target now, so both upward and downward swipes go
+        // straight to the page's own scroll/swipe handling with nothing
+        // intercepting or adding overhead in between.
+        webView.overScrollMode = View.OVER_SCROLL_NEVER
 
         val settings: WebSettings = webView.settings
         settings.javaScriptEnabled = true
@@ -45,6 +47,7 @@ class MainActivity : AppCompatActivity() {
         settings.mediaPlaybackRequiresUserGesture = false
         settings.cacheMode = WebSettings.LOAD_DEFAULT
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        settings.offscreenPreRaster = true
 
         webView.webViewClient = object : WebViewClient() {
 
@@ -73,7 +76,6 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
-                swipeRefresh.isRefreshing = false
                 errorView.visibility = View.GONE
                 webView.visibility = View.VISIBLE
             }
@@ -85,7 +87,6 @@ class MainActivity : AppCompatActivity() {
             ) {
                 super.onReceivedError(view, request, error)
                 if (request.isForMainFrame) {
-                    swipeRefresh.isRefreshing = false
                     webView.visibility = View.GONE
                     errorView.visibility = View.VISIBLE
                 }
@@ -106,7 +107,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        swipeRefresh.setOnRefreshListener { webView.reload() }
         retryButton.setOnClickListener {
             errorView.visibility = View.GONE
             webView.visibility = View.VISIBLE
